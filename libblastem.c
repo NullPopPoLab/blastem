@@ -9,6 +9,8 @@
 #include "genesis.h"
 #include "sms.h"
 
+#define CUSTOM_VERSION "+NC41"
+
 static retro_environment_t retro_environment;
 static retro_video_refresh_t retro_video_refresh;
 static retro_audio_sample_batch_t retro_audio_sample_batch;
@@ -105,7 +107,7 @@ RETRO_API unsigned retro_api_version(void)
 RETRO_API void retro_get_system_info(struct retro_system_info *info)
 {
 	info->library_name     = "BlastEm";
-	info->library_version  = "0.6.3-pre"; /* TODO: share this with blastem.c */
+	info->library_version  = "0.6.3-pre" CUSTOM_VERSION; /* TODO: share this with blastem.c */
 	info->valid_extensions = "md|gen|sms|bin|rom";
 	info->need_fullpath    = false;
 	info->block_extract    = false;
