@@ -27,13 +27,13 @@ RETRO_API void retro_set_environment(retro_environment_t re)
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_C,     "A" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "B" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "C" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Y" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "A" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,     "X" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,     "Z" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT,    "Mode" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Z,     "X" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "Y" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Z" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,    "Mode" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start" }, \
 
 	static const struct retro_input_descriptor desc[] = {
@@ -436,11 +436,21 @@ uint32_t render_overscan_bot(void)          { return overscan_bot; }
 void process_events(void)
 {
    int port;
-   int16_t inputs[2];
-	static int16_t prev_state[2][RETRO_DEVICE_ID_JOYPAD_L2];
+   int32_t inputs[2];
+	static int32_t prev_state[2][NUM_GAMEPAD_BUTTONS-DPAD_UP];
 	static const uint8_t map[] = {
-		BUTTON_B, BUTTON_A, BUTTON_MODE, BUTTON_START, DPAD_UP, DPAD_DOWN,
-		DPAD_LEFT, DPAD_RIGHT, BUTTON_C, BUTTON_Y, BUTTON_X, BUTTON_Z
+		RETRO_DEVICE_ID_JOYPAD_UP, // DPAD_UP
+		RETRO_DEVICE_ID_JOYPAD_DOWN, // DPAD_DOWN
+		RETRO_DEVICE_ID_JOYPAD_LEFT, // DPAD_LEFT
+		RETRO_DEVICE_ID_JOYPAD_RIGHT, // DPAD_RIGHT
+		RETRO_DEVICE_ID_JOYPAD_C, // BUTTON_A
+		RETRO_DEVICE_ID_JOYPAD_B, // BUTTON_B
+		RETRO_DEVICE_ID_JOYPAD_A, // BUTTON_C
+		RETRO_DEVICE_ID_JOYPAD_START, // BUTTON_START
+		RETRO_DEVICE_ID_JOYPAD_Z, // BUTTON_X
+		RETRO_DEVICE_ID_JOYPAD_Y, // BUTTON_Y
+		RETRO_DEVICE_ID_JOYPAD_X, // BUTTON_Z
+		RETRO_DEVICE_ID_JOYPAD_R, // BUTTON_MODE
 	};
 
 	/* TODO: handle other input device types
@@ -461,7 +471,7 @@ void process_events(void)
       for (port = 0; port < 2; port++)
       {
          int id;
-         for (id = RETRO_DEVICE_ID_JOYPAD_B; id < RETRO_DEVICE_ID_JOYPAD_L2; id++)
+         for (id = RETRO_DEVICE_ID_JOYPAD_B; id < RETRO_DEVICE_ID_JOYPAD_BUTTON_MAX; id++)
          {
             if (retro_input_state(port, RETRO_DEVICE_JOYPAD, 0, id))
                inputs[port] |= (1 << id);
@@ -472,16 +482,16 @@ void process_events(void)
    for (port = 0; port < 2; port++)
    {
       int id;
-      for (id = RETRO_DEVICE_ID_JOYPAD_B; id < RETRO_DEVICE_ID_JOYPAD_L2; id++)
+      for (id = DPAD_UP; id < NUM_GAMEPAD_BUTTONS; id++)
       {
-         int16_t new_state = inputs[port] & (1 << id);
-         if (new_state != prev_state[port][id])
+         int32_t new_state = inputs[port] & (1 << map[id-DPAD_UP]);
+         if (new_state != prev_state[port][id-DPAD_UP])
          {
             if (new_state)
-               current_system->gamepad_down(current_system, port + 1, map[id]);
+               current_system->gamepad_down(current_system, port + 1, id);
             else
-               current_system->gamepad_up(current_system, port + 1, map[id]);
-            prev_state[port][id] = new_state;
+               current_system->gamepad_up(current_system, port + 1, id);
+            prev_state[port][id-DPAD_UP] = new_state;
          }
       }
    }
