@@ -8,6 +8,7 @@
 #include "io.h"
 #include "genesis.h"
 #include "sms.h"
+#include "libretro_core_options.h"
 
 #define CUSTOM_VERSION "+NC41"
 
@@ -18,6 +19,43 @@ static retro_input_poll_t retro_input_poll;
 static retro_input_state_t retro_input_state;
 
 static bool libretro_supports_bitmasks    = false;
+
+#define TURBO_A 0
+#define TURBO_B 1
+#define TURBO_C 2
+#define TURBO_X 3
+#define TURBO_Y 4
+#define TURBO_Z 5
+#define TURBO_MODE 6
+#define TURBO_START 7
+#define TURBO_BUTTONS 8
+
+#define MAX_PORT 8
+
+typedef struct TurboWork_{
+	bool pressing;
+	uint32_t counter;
+} TurboWork;
+typedef struct TurboConfig_{
+	uint32_t btnflg;
+	uint32_t speed;
+	uint32_t dstbtn;
+	uint32_t srcbtn;
+	const char* config;
+	TurboWork work[MAX_PORT];
+} TurboConfig;
+
+TurboConfig turboConfig[TURBO_BUTTONS]={
+	{BUTTON_A,0x2800,RETRO_DEVICE_ID_JOYPAD_C,RETRO_DEVICE_ID_JOYPAD_G1,"blastem_turbo_speed_a"},
+	{BUTTON_B,0x2800,RETRO_DEVICE_ID_JOYPAD_B,RETRO_DEVICE_ID_JOYPAD_G2,"blastem_turbo_speed_b"},
+	{BUTTON_C,0x2800,RETRO_DEVICE_ID_JOYPAD_A,RETRO_DEVICE_ID_JOYPAD_G3,"blastem_turbo_speed_c"},
+	{BUTTON_X,0x2800,RETRO_DEVICE_ID_JOYPAD_Z,RETRO_DEVICE_ID_JOYPAD_G4,"blastem_turbo_speed_x"},
+	{BUTTON_Y,0x2800,RETRO_DEVICE_ID_JOYPAD_Y,RETRO_DEVICE_ID_JOYPAD_G5,"blastem_turbo_speed_y"},
+	{BUTTON_Z,0x2800,RETRO_DEVICE_ID_JOYPAD_X,RETRO_DEVICE_ID_JOYPAD_G6,"blastem_turbo_speed_z"},
+	{BUTTON_MODE,0x2800,RETRO_DEVICE_ID_JOYPAD_R,RETRO_DEVICE_ID_JOYPAD_R0,"blastem_turbo_speed_mode"},
+	{BUTTON_START,0x2800,RETRO_DEVICE_ID_JOYPAD_START,RETRO_DEVICE_ID_JOYPAD_L0,"blastem_turbo_speed_start"},
+};
+unsigned turbo_ratio=0x8000;
 
 RETRO_API void retro_set_environment(retro_environment_t re)
 {
@@ -33,8 +71,16 @@ RETRO_API void retro_set_environment(retro_environment_t re)
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Z,     "X" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "Y" }, \
 		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Z" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,    "Mode" }, \
-		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,     "Mode" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G1,    "Turbo A" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G2,    "Turbo B" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G3,    "Turbo C" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G4,    "Turbo X" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G5,    "Turbo Y" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_G6,    "Turbo Z" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R0,    "Turbo Mode" }, \
+		{ pad_num, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L0,    "Turbo Start" }, \
 
 	static const struct retro_input_descriptor desc[] = {
 		input_descriptor_macro(0)
@@ -47,6 +93,8 @@ RETRO_API void retro_set_environment(retro_environment_t re)
 		input_descriptor_macro(7)
 		{ 0 },
 	};
+
+	libretro_set_core_options(re);
 
 	re(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void *)desc);
 }
@@ -111,6 +159,28 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info)
 	info->valid_extensions = "md|gen|sms|bin|rom";
 	info->need_fullpath    = false;
 	info->block_extract    = false;
+}
+
+static void check_variables(bool started_from_load)
+{
+	struct retro_variable var;
+
+	// turbo speed 
+	for(TurboConfig* tc=&turboConfig[0];tc<&turboConfig[TURBO_BUTTONS];++tc){
+		var.key = tc->config;
+		if (retro_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+		{
+			tc->speed=atoi(var.value)*0x800;
+		}
+		else tc->speed=0x2800;
+	}
+
+	var.key = "blastem_turbo_ratio";
+	if (retro_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+	{
+		turbo_ratio=0x10000-(atoi(var.value)*0x1000)&0xffff;
+	}
+	else turbo_ratio=0x8000;
 }
 
 static vid_std video_standard;
@@ -201,6 +271,11 @@ RETRO_API void retro_reset(void)
 static uint8_t started;
 RETRO_API void retro_run(void)
 {
+   bool updated = false;
+
+   if (retro_environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
+      check_variables(false);
+
 	retro_input_poll();
 	if (started)
 		current_system->resume_context(current_system);
@@ -268,6 +343,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
    current_system     = alloc_config_system(stype, &current_media, 0, 0);
 
    retro_environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format);
+
+	check_variables(true);
 
    if (!current_system)
       return false;
@@ -482,6 +559,21 @@ void process_events(void)
    for (port = 0; port < 2; port++)
    {
       int id;
+
+		for(TurboConfig* tc=&turboConfig[0];tc<&turboConfig[TURBO_BUTTONS];++tc){
+			tc->work[port].pressing=!!(inputs[port] & (1 << tc->srcbtn));
+			if(tc->work[port].pressing){
+				if(!tc->speed)inputs[port] |= 1 << tc->dstbtn;
+				else{
+					tc->work[port].counter-=tc->speed;
+					if((tc->work[port].counter&0xffff)>=turbo_ratio)inputs[port] |= 1 << tc->dstbtn;
+				}
+			}
+			else{
+				tc->work[port].counter=0;
+			}
+		}
+
       for (id = DPAD_UP; id < NUM_GAMEPAD_BUTTONS; id++)
       {
          int32_t new_state = inputs[port] & (1 << map[id-DPAD_UP]);
